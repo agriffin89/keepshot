@@ -1,0 +1,22 @@
+# Visual Studio
+.vs/
+*.user
+*.suo
+
+# Build artifacts
+bin/
+obj/
+
+# Node modules
+frontend/node_modules/
+
+# Logs
+*.log
+
+# Temp files
+backend/temp/
+backend/wwwroot/screenshots/
+
+# System files
+Thumbs.db
+.DS_Store
