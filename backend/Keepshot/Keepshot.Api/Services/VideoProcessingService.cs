@@ -7,7 +7,6 @@ namespace Keepshot.Api.Services
     {
         public async Task<string> ExtractFrameAsync(IFormFile file, string time, HttpRequest request)
         {
-            // Base folders
             var root = Directory.GetCurrentDirectory();
             var tempFolder = Path.Combine(root, "temp");
             var screenshotsFolder = Path.Combine(root, "wwwroot", "screenshots");
@@ -15,34 +14,30 @@ namespace Keepshot.Api.Services
             Directory.CreateDirectory(tempFolder);
             Directory.CreateDirectory(screenshotsFolder);
 
-            // 1) Save video temporarily
+            // 1) Save temp video
             var inputPath = Path.Combine(
                 tempFolder,
                 $"{Guid.NewGuid()}{Path.GetExtension(file.FileName)}"
             );
 
             using (var stream = new FileStream(inputPath, FileMode.Create))
-            {
                 await file.CopyToAsync(stream);
-            }
 
-            // 2) Parse time
+            // 2) Parse timestamp
             var timestamp = ParseTimestamp(time);
 
-            // 3) Get duration and clamp
+            // 3) Media duration & clamp
             var mediaInfo = await FFmpeg.GetMediaInfo(inputPath);
             var maxDuration = mediaInfo.Duration;
 
             if (timestamp > maxDuration)
             {
-                var safe = maxDuration - TimeSpan.FromSeconds(1);
-                if (safe < TimeSpan.Zero)
-                    safe = TimeSpan.Zero;
-
-                timestamp = safe;
+                timestamp = maxDuration - TimeSpan.FromSeconds(1);
+                if (timestamp < TimeSpan.Zero)
+                    timestamp = TimeSpan.Zero;
             }
 
-            // 4) Output path
+            // 4) Output screenshot path
             var outputFileName = $"keepshot_{Guid.NewGuid():N}.jpg";
             var outputPath = Path.Combine(screenshotsFolder, outputFileName);
 
@@ -51,20 +46,23 @@ namespace Keepshot.Api.Services
                 .Snapshot(inputPath, outputPath, timestamp);
 
             conversion.SetOverwriteOutput(true);
-
             await conversion.Start();
 
             // 6) Cleanup temp video
-            try { File.Delete(inputPath); } catch { /* ignore */ }
+            try { File.Delete(inputPath); } catch { }
 
-            // 7) Public URL
+            // 🔥 AUTO-CLEAN older files
+            CleanOldFiles(tempFolder, TimeSpan.FromHours(1));
+            CleanOldFiles(screenshotsFolder, TimeSpan.FromHours(1));
+
+            // 7) Build public URL
             var baseUrl = $"{request.Scheme}://{request.Host}";
-            var imageUrl = $"{baseUrl}/screenshots/{outputFileName}";
-
-            return imageUrl;
+            return $"{baseUrl}/screenshots/{outputFileName}";
         }
 
-        // 👇 NEW: multi-screenshot version, more efficient
+        // ================================
+        // MULTI-SCREENSHOT VERSION
+        // ================================
         public async Task<List<string>> ExtractFramesAsync(
             IFormFile file,
             IEnumerable<string> times,
@@ -77,38 +75,32 @@ namespace Keepshot.Api.Services
             Directory.CreateDirectory(tempFolder);
             Directory.CreateDirectory(screenshotsFolder);
 
-            // 1) Save the video ONCE
+            // Save video once
             var inputPath = Path.Combine(
                 tempFolder,
                 $"{Guid.NewGuid()}{Path.GetExtension(file.FileName)}"
             );
 
             using (var stream = new FileStream(inputPath, FileMode.Create))
-            {
                 await file.CopyToAsync(stream);
-            }
 
-            // 2) Get media info ONCE
+            // Get duration once
             var mediaInfo = await FFmpeg.GetMediaInfo(inputPath);
             var maxDuration = mediaInfo.Duration;
 
-            var imageUrls = new List<string>();
+            var resultUrls = new List<string>();
             var index = 0;
 
-            foreach (var rawTime in times)
+            foreach (var raw in times)
             {
-                if (string.IsNullOrWhiteSpace(rawTime))
-                    continue;
+                if (string.IsNullOrWhiteSpace(raw)) continue;
 
-                var timestamp = ParseTimestamp(rawTime);
+                var timestamp = ParseTimestamp(raw);
 
                 if (timestamp > maxDuration)
                 {
-                    var safe = maxDuration - TimeSpan.FromSeconds(1);
-                    if (safe < TimeSpan.Zero)
-                        safe = TimeSpan.Zero;
-
-                    timestamp = safe;
+                    timestamp = maxDuration - TimeSpan.FromSeconds(1);
+                    if (timestamp < TimeSpan.Zero) timestamp = TimeSpan.Zero;
                 }
 
                 var outputFileName = $"keepshot_{Guid.NewGuid():N}_{index}.jpg";
@@ -121,57 +113,63 @@ namespace Keepshot.Api.Services
                 await conversion.Start();
 
                 var baseUrl = $"{request.Scheme}://{request.Host}";
-                var imageUrl = $"{baseUrl}/screenshots/{outputFileName}";
-                imageUrls.Add(imageUrl);
+                resultUrls.Add($"{baseUrl}/screenshots/{outputFileName}");
 
                 index++;
             }
 
-            // 3) Cleanup temp video
-            try { File.Delete(inputPath); } catch { /* ignore */ }
+            // Delete temp video
+            try { File.Delete(inputPath); } catch { }
 
-            return imageUrls;
+            // Auto-clean old files
+            CleanOldFiles(tempFolder, TimeSpan.FromHours(1));
+            CleanOldFiles(screenshotsFolder, TimeSpan.FromHours(1));
+
+            return resultUrls;
         }
 
-        // already existed in your file
+        // ================================
+        // Timestamp Parser
+        // ================================
         private static TimeSpan ParseTimestamp(string time)
         {
-            if (string.IsNullOrWhiteSpace(time))
-                throw new ArgumentException("Time is required", nameof(time));
-
-            var parts = time.Trim().Split(':', StringSplitOptions.RemoveEmptyEntries);
+            var parts = time.Trim().Split(':');
 
             if (parts.Length == 1)
-            {
-                // "ss"
-                if (!int.TryParse(parts[0], out var seconds))
-                    throw new ArgumentException($"Invalid time format: {time}");
-
-                return TimeSpan.FromSeconds(seconds);
-            }
+                return TimeSpan.FromSeconds(int.Parse(parts[0]));
 
             if (parts.Length == 2)
-            {
-                // "mm:ss"
-                if (!int.TryParse(parts[0], out var minutes) ||
-                    !int.TryParse(parts[1], out var seconds))
-                    throw new ArgumentException($"Invalid time format: {time}");
-
-                return new TimeSpan(0, minutes, seconds);
-            }
+                return new TimeSpan(0, int.Parse(parts[0]), int.Parse(parts[1]));
 
             if (parts.Length == 3)
-            {
-                // "hh:mm:ss"
-                if (!int.TryParse(parts[0], out var hours) ||
-                    !int.TryParse(parts[1], out var minutes) ||
-                    !int.TryParse(parts[2], out var seconds))
-                    throw new ArgumentException($"Invalid time format: {time}");
-
-                return new TimeSpan(hours, minutes, seconds);
-            }
+                return new TimeSpan(int.Parse(parts[0]), int.Parse(parts[1]), int.Parse(parts[2]));
 
             throw new ArgumentException($"Invalid time format: {time}");
+        }
+
+        // ================================
+        // AUTO CLEAN OLD FILES (1 hour)
+        // ================================
+        private static void CleanOldFiles(string folder, TimeSpan maxAge)
+        {
+            if (!Directory.Exists(folder))
+                return;
+
+            var cutoff = DateTime.UtcNow - maxAge;
+
+            foreach (var file in Directory.GetFiles(folder))
+            {
+                try
+                {
+                    var info = new FileInfo(file);
+                    if (info.LastWriteTimeUtc < cutoff)
+                        info.Delete();
+                }
+                catch
+                {
+                    // Never interrupt screenshot generation
+                }
+            }
         }
     }
 }

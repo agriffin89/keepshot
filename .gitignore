@@ -1,22 +1,43 @@
-# Visual Studio
+# ==========================
+# Visual Studio & VS Build
+# ==========================
 .vs/
 *.user
 *.suo
+*.cache
+*.dbmdl
 
-# Build artifacts
-bin/
-obj/
+# Backend build artifacts
+backend/Keepshot/Keepshot.Api/bin/
+backend/Keepshot/Keepshot.Api/obj/
 
-# Node modules
+# ==========================
+# Ignore generated images (screenshots)
+# Keep the folder, ignore files inside
+# ==========================
+backend/Keepshot/Keepshot.Api/wwwroot/screenshots/*
+!backend/Keepshot/Keepshot.Api/wwwroot/screenshots/.gitkeep
+
+# ==========================
+# Ignore temp FFmpeg files
+# Keep the folder
+# ==========================
+backend/Keepshot/Keepshot.Api/temp/*
+!backend/Keepshot/Keepshot.Api/temp/.gitkeep
+
+# ==========================
+# Frontend
+# ==========================
 frontend/node_modules/
+frontend/dist/
 
+# ==========================
 # Logs
+# ==========================
 *.log
 
-# Temp files
-backend/temp/
-backend/wwwroot/screenshots/
-
-# System files
+# ==========================
+# System / OS Files
+# ==========================
 Thumbs.db
 .DS_Store
