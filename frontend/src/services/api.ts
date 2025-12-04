@@ -2,19 +2,20 @@ export interface ExtractResponse {
   imageUrl: string;
 }
 
-export interface MultipleExtractResponse {
+export interface MultiExtractResponse {
   imageUrls: string[];
 }
 
-const API_BASE_URL = "https://localhost:7190"; // already using this
+const API_BASE_URL = "http://localhost:5000";
 
+// ---------- SINGLE screenshot (existing behavior) ----------
 export async function extractScreenshot(
   file: File,
   time: string
 ): Promise<ExtractResponse> {
   const formData = new FormData();
   formData.append("file", file);
-  formData.append("time", time);
+  formData.append("time", time); // mm:ss
 
   const response = await fetch(`${API_BASE_URL}/api/video/extract`, {
     method: "POST",
@@ -29,13 +30,15 @@ export async function extractScreenshot(
   return (await response.json()) as ExtractResponse;
 }
 
-// 👇 NEW: multi-screenshot version
-export async function extractMultipleScreenshots(
+// ---------- MULTIPLE screenshots (new endpoint) ----------
+export async function extractScreenshots(
   file: File,
   times: string[]
-): Promise<MultipleExtractResponse> {
+): Promise<MultiExtractResponse> {
   const formData = new FormData();
   formData.append("file", file);
+
+  // send each time entry; backend will read them as a collection
   times.forEach((t) => formData.append("times", t));
 
   const response = await fetch(`${API_BASE_URL}/api/video/extract-multiple`, {
@@ -48,5 +51,5 @@ export async function extractMultipleScreenshots(
     throw new Error(text || "Failed to extract screenshots");
   }
 
-  return (await response.json()) as MultipleExtractResponse;
+  return (await response.json()) as MultiExtractResponse;
 }

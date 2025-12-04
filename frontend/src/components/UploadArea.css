@@ -11,6 +11,7 @@
 }
 
 .upload-inner {
+  width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -46,10 +47,10 @@
 
 .upload-thumb-frame {
   position: relative;
-  width: 1280px;
-  max-width: 100%;
-  height: 720px;
-  border-radius: 16px;
+  width: 100%; /* 👈 stretch across card */
+  max-width: 1280px; /* prevent being wider than content */
+  aspect-ratio: 16 / 9; /* 👈 keeps video shape, removes fixed height */
+  border-radius: 10px;
   overflow: hidden;
   background: #000;
   box-shadow: 0 16px 40px rgba(15, 23, 42, 0.18);
@@ -68,7 +69,7 @@
   right: 8px;
   bottom: 8px;
   padding: 2px 8px;
-  font-size: 12px;
+  font-size: 16px;
   font-weight: 500;
   color: #ffffff;
   background: rgba(0, 0, 0, 0.78);

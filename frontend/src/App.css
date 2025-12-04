@@ -65,15 +65,20 @@
   display: flex;
   justify-content: center;
   align-items: flex-start;
+  padding: 40px 16px;
 }
 
 .card {
   width: 100%;
-  max-width: 720px;
-  background: white;
+  max-width: 70%;
+  background: #ffffff;
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-soft);
-  padding: 24px 24px 20px;
+  padding: 24px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
 }
 
 .controls-row {

@@ -2,22 +2,34 @@ import { useState } from "react";
 import "./App.css";
 import { UploadArea } from "./components/UploadArea";
 import { TimeInput } from "./components/TimeInput";
-import { extractScreenshot } from "./services/api";
+import { extractScreenshots } from "./services/api";
 
 function App() {
   const [file, setFile] = useState<File | null>(null);
   const [durationSeconds, setDurationSeconds] = useState<number | null>(null);
-  const [time, setTime] = useState("00:05");
+  const [times, setTimes] = useState<string[]>([""]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const downloadImage = (url: string) => {
+  // ⬇️ Download using BLOB so the browser doesn't navigate to localhost:5000
+  const downloadImage = async (url: string, index: number) => {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Failed to download screenshot: ${response.status}`);
+    }
+
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+
     const link = document.createElement("a");
-    link.href = url;
-    link.download = "keepshot.jpg";
+    link.href = objectUrl;
+    link.download = `keepshot_${index + 1}.jpg`;
+
     document.body.appendChild(link);
     link.click();
     link.remove();
+
+    URL.revokeObjectURL(objectUrl);
   };
 
   const handleExtract = async () => {
@@ -26,8 +38,16 @@ function App() {
       return;
     }
 
-    if (!time || !/^\d{2}:\d{2}$/.test(time)) {
-      alert("Please enter a valid time in mm:ss format.");
+    const cleanedTimes = times.map((t) => t.trim()).filter(Boolean);
+
+    if (!cleanedTimes.length) {
+      alert("Please enter at least one time.");
+      return;
+    }
+
+    const invalid = cleanedTimes.find((t) => !/^\d{2}:\d{2}$/.test(t));
+    if (invalid) {
+      alert(`"${invalid}" is not valid. Please use mm:ss format.`);
       return;
     }
 
@@ -35,8 +55,12 @@ function App() {
     setError(null);
 
     try {
-      const result = await extractScreenshot(file, time);
-      downloadImage(result.imageUrl);
+      const result = await extractScreenshots(file, cleanedTimes);
+
+      // ⬇️ Download all screenshots, one file per time
+      await Promise.all(
+        result.imageUrls.map((url, idx) => downloadImage(url, idx))
+      );
     } catch (err: unknown) {
       console.error(err);
       const message =
@@ -51,9 +75,8 @@ function App() {
     }
   };
 
-  // For now this is only UI – later we’ll hook it to the multi-screenshot feature
   const handleAddScreenshotClick = () => {
-    console.log("TODO: add another screenshot input");
+    setTimes((prev) => [...prev, "00:05"]);
   };
 
   return (
@@ -74,11 +97,22 @@ function App() {
             onDurationChange={setDurationSeconds}
           />
 
-          {/* controls row in a single line: label + input + Download + plus */}
           <div className="controls-row">
             <span className="label">Screenshot at</span>
 
-            <TimeInput value={time} onChange={setTime} />
+            <div className="time-inputs">
+              {times.map((value, index) => (
+                <TimeInput
+                  key={index}
+                  value={value}
+                  onChange={(newValue) => {
+                    const next = [...times];
+                    next[index] = newValue;
+                    setTimes(next);
+                  }}
+                />
+              ))}
+            </div>
 
             <button
               className="btn-primary"
