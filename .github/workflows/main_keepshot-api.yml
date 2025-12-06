@@ -1,0 +1,73 @@
+# Docs for the Azure Web Apps Deploy action: https://github.com/Azure/webapps-deploy
+# More GitHub Actions for Azure: https://github.com/Azure/actions
+
+name: Build and deploy ASP.Net Core app to Azure Web App - keepshot-api
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: read #This is required for actions/checkout
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.x'
+
+      # Restore from the API project folder
+      - name: Restore
+        run: dotnet restore Keepshot.Api.csproj
+        working-directory: backend/Keepshot/Keepshot.Api
+
+      # Build from the API project folder
+      - name: Build with dotnet
+        run: dotnet build Keepshot.Api.csproj --configuration Release --no-restore
+        working-directory: backend/Keepshot/Keepshot.Api
+
+      # Publish into a folder that will be sent as an artifact
+      - name: dotnet publish
+        run: dotnet publish Keepshot.Api.csproj -c Release -o "${{ env.DOTNET_ROOT }}/myapp"
+        working-directory: backend/Keepshot/Keepshot.Api
+
+      - name: Upload artifact for deployment job
+        uses: actions/upload-artifact@v4
+        with:
+          name: .net-app
+          path: ${{ env.DOTNET_ROOT }}/myapp
+
+  deploy:
+    runs-on: windows-latest
+    needs: build
+    permissions:
+      id-token: write #This is required for requesting the JWT
+      contents: read   #This is required for actions/checkout
+
+    steps:
+      - name: Download artifact from build job
+        uses: actions/download-artifact@v4
+        with:
+          name: .net-app
+      
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_29DA2BB8F5E34EDB86ED088EC64B25E3 }}
+          tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_C0DD770C8908441AA56DD006ED168AAC }}
+          subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_9FDA2A886C524AE780F369782B9E1B6D }}
+
+      - name: Deploy to Azure Web App
+        id: deploy-to-webapp
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: 'keepshot-api'
+          slot-name: 'Production'
+          package: .
