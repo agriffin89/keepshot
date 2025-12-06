@@ -2,34 +2,41 @@ import { useState } from "react";
 import "./App.css";
 import { UploadArea } from "./components/UploadArea";
 import { TimeInput } from "./components/TimeInput";
-import { extractScreenshots } from "./services/api";
+import { extractScreenshot, extractScreenshots } from "./services/api";
 
 function App() {
   const [file, setFile] = useState<File | null>(null);
   const [durationSeconds, setDurationSeconds] = useState<number | null>(null);
-  const [times, setTimes] = useState<string[]>([""]);
+
+  // multiple timestamps, first one with default "00:05"
+  const [screenshotTimes, setScreenshotTimes] = useState<string[]>([""]);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // ⬇️ Download using BLOB so the browser doesn't navigate to localhost:5000
-  const downloadImage = async (url: string, index: number) => {
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`Failed to download screenshot: ${response.status}`);
-    }
-
-    const blob = await response.blob();
-    const objectUrl = URL.createObjectURL(blob);
-
+  const downloadImage = (url: string, index?: number) => {
     const link = document.createElement("a");
-    link.href = objectUrl;
-    link.download = `keepshot_${index + 1}.jpg`;
+    link.href = url;
+
+    const suffix = index !== undefined ? `_${index + 1}` : "";
+    link.download = `keepshot${suffix}.jpg`;
 
     document.body.appendChild(link);
     link.click();
     link.remove();
+  };
 
-    URL.revokeObjectURL(objectUrl);
+  const handleTimeChange = (index: number, value: string) => {
+    setScreenshotTimes((prev) => {
+      const next = [...prev];
+      next[index] = value;
+      return next;
+    });
+  };
+
+  const handleAddScreenshotClick = () => {
+    // just add a new empty time input
+    setScreenshotTimes((prev) => [...prev, ""]);
   };
 
   const handleExtract = async () => {
@@ -38,29 +45,37 @@ function App() {
       return;
     }
 
-    const cleanedTimes = times.map((t) => t.trim()).filter(Boolean);
+    // clean & keep only non-empty times
+    const cleaned = screenshotTimes
+      .map((t) => t.trim())
+      .filter((t) => t.length > 0);
 
-    if (!cleanedTimes.length) {
-      alert("Please enter at least one time.");
+    if (cleaned.length === 0) {
+      alert("Please enter at least one time in mm:ss format.");
       return;
     }
 
-    const invalid = cleanedTimes.find((t) => !/^\d{2}:\d{2}$/.test(t));
-    if (invalid) {
-      alert(`"${invalid}" is not valid. Please use mm:ss format.`);
-      return;
+    // validate all times as mm:ss
+    for (const t of cleaned) {
+      if (!/^\d{2}:\d{2}$/.test(t)) {
+        alert(`Invalid time "${t}". Please use mm:ss (e.g. 04:25).`);
+        return;
+      }
     }
 
     setLoading(true);
     setError(null);
 
     try {
-      const result = await extractScreenshots(file, cleanedTimes);
-
-      // ⬇️ Download all screenshots, one file per time
-      await Promise.all(
-        result.imageUrls.map((url, idx) => downloadImage(url, idx))
-      );
+      if (cleaned.length === 1) {
+        // 🔹 Single timestamp → /api/video/extract
+        const result = await extractScreenshot(file, cleaned[0]);
+        downloadImage(result.imageUrl);
+      } else {
+        // 🔹 Multiple timestamps → /api/video/extract-multiple
+        const result = await extractScreenshots(file, cleaned);
+        result.imageUrls.forEach((url, idx) => downloadImage(url, idx));
+      }
     } catch (err: unknown) {
       console.error(err);
       const message =
@@ -73,10 +88,6 @@ function App() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const handleAddScreenshotClick = () => {
-    setTimes((prev) => [...prev, "00:05"]);
   };
 
   return (
@@ -97,41 +108,46 @@ function App() {
             onDurationChange={setDurationSeconds}
           />
 
-          <div className="controls-row">
-            <span className="label">Screenshot at</span>
+          {/* first row: label + first input + Download + + button */}
+          {screenshotTimes.length > 0 && (
+            <div className="controls-row">
+              <span className="label">Screenshot at</span>
 
-            <div className="time-inputs">
-              {times.map((value, index) => (
-                <TimeInput
-                  key={index}
-                  value={value}
-                  onChange={(newValue) => {
-                    const next = [...times];
-                    next[index] = newValue;
-                    setTimes(next);
-                  }}
-                />
-              ))}
+              <TimeInput
+                value={screenshotTimes[0]}
+                onChange={(val) => handleTimeChange(0, val)}
+              />
+
+              <button
+                className="btn-primary"
+                onClick={handleExtract}
+                disabled={loading || !file}
+              >
+                {loading ? "Processing..." : "Download"}
+              </button>
+
+              <button
+                type="button"
+                className="btn-icon"
+                onClick={handleAddScreenshotClick}
+                disabled={!file}
+                aria-label="Add screenshot time"
+              >
+                +
+              </button>
             </div>
+          )}
 
-            <button
-              className="btn-primary"
-              onClick={handleExtract}
-              disabled={loading || !file}
-            >
-              {loading ? "Processing..." : "Download"}
-            </button>
-
-            <button
-              type="button"
-              className="btn-icon"
-              onClick={handleAddScreenshotClick}
-              disabled={!file}
-              aria-label="Add screenshot time"
-            >
-              +
-            </button>
-          </div>
+          {/* any extra time inputs (without label / buttons) */}
+          {screenshotTimes.slice(1).map((time, idx) => (
+            <div className="controls-row" key={idx + 1}>
+              <span className="label label--spacer" />
+              <TimeInput
+                value={time}
+                onChange={(val) => handleTimeChange(idx + 1, val)}
+              />
+            </div>
+          ))}
 
           {error && <p style={{ color: "#e55353", marginTop: 12 }}>{error}</p>}
         </div>

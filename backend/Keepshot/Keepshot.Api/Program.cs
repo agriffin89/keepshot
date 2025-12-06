@@ -5,7 +5,7 @@ using Microsoft.AspNetCore.Builder;      // para StaticFileOptions
 using Microsoft.AspNetCore.StaticFiles;   // opcional, por si lo pide
 
 var builder = WebApplication.CreateBuilder(args);
-var corsPolicyName = "Frontend";
+var corsPolicyName = "KeepshotCors";
 
 // Allow larger uploads (e.g. up to 200 MB)
 builder.Services.Configure<FormOptions>(options =>
@@ -28,10 +28,19 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy(corsPolicyName, policy =>
     {
-        policy.WithOrigins("http://localhost:5173")
+        policy.WithOrigins(
+            "http://localhost:5173",
+            "https://keepshot-api-adbufeg3hegng3h6.mexicocentral-01.azurewebsites.net"
+            )
               .AllowAnyHeader()
-              .AllowAnyMethod();
+              .AllowAnyMethod()
+              .AllowCredentials(); ;
     });
+});
+
+builder.Services.AddHttpsRedirection(options =>
+{
+    options.HttpsPort = 443;
 });
 
 // Register services
@@ -65,6 +74,8 @@ app.UseStaticFiles(new StaticFileOptions
 app.UseCors(corsPolicyName);
 
 app.UseAuthorization();
+
+app.UseStaticFiles();
 
 app.MapControllers();
 
