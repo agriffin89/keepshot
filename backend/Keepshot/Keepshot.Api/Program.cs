@@ -1,16 +1,15 @@
-﻿using Xabe.FFmpeg;
+﻿using System.IO;
 using Keepshot.Api.Services;
 using Microsoft.AspNetCore.Http.Features;
-using Microsoft.AspNetCore.Builder;      // para StaticFileOptions
-using Microsoft.AspNetCore.StaticFiles;   // opcional, por si lo pide
+using Xabe.FFmpeg;
 
 var builder = WebApplication.CreateBuilder(args);
-var corsPolicyName = "KeepshotCors";
+var corsPolicyName = "Frontend";
 
-// Allow larger uploads (e.g. up to 200 MB)
+// ---- Upload limits (same as before) ----
 builder.Services.Configure<FormOptions>(options =>
 {
-    options.MultipartBodyLengthLimit = 200 * 1024 * 1024;
+    options.MultipartBodyLengthLimit = 200L * 1024 * 1024;
 });
 
 builder.WebHost.ConfigureKestrel(options =>
@@ -18,48 +17,55 @@ builder.WebHost.ConfigureKestrel(options =>
     options.Limits.MaxRequestBodySize = 200L * 1024 * 1024;
 });
 
-// Tell Xabe where ffmpeg.exe is located
-//  NOTE: this path only exists on your local machine.
-// For Azure you’ll later need a different path or bundle ffmpeg with the app.
-FFmpeg.SetExecutablesPath(@"C:\tools\ffmpeg\bin");
-
-// CORS so React (5173) can call this API
+// ---- CORS: allow localhost:5173 (and later your real frontend domain) ----
 builder.Services.AddCors(options =>
 {
     options.AddPolicy(corsPolicyName, policy =>
-    {
-        policy.WithOrigins(
-            "http://localhost:5173",
-            "https://keepshot-api-adbufeg3hegng3h6.mexicocentral-01.azurewebsites.net"
+        policy
+            .WithOrigins(
+                "http://localhost:5173"        // Vite dev server
+                                               // ,"https://your-frontend-domain.com"  // add later
             )
-              .AllowAnyHeader()
-              .AllowAnyMethod()
-              .AllowCredentials(); ;
-    });
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+    );
 });
 
-builder.Services.AddHttpsRedirection(options =>
+// ---- FFmpeg path: different for local vs Azure ----
+if (builder.Environment.IsDevelopment())
 {
-    options.HttpsPort = 443;
-});
+    // your local machine path
+    FFmpeg.SetExecutablesPath(@"C:\tools\ffmpeg\bin");
+}
+else
+{
+    // On Azure: put ffmpeg/ffprobe binaries in a folder called "ffmpeg"
+    // inside the API project, and mark them as "Copy to Output Directory".
+    var ffmpegFolder = Path.Combine(builder.Environment.ContentRootPath, "ffmpeg");
+    FFmpeg.SetExecutablesPath(ffmpegFolder);
+}
 
-// Register services
+// ---- Services / MVC ----
 builder.Services.AddScoped<IVideoProcessingService, VideoProcessingService>();
-
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 var app = builder.Build();
 
-// Enable Swagger always (local + Azure)
-app.UseSwagger();
-app.UseSwaggerUI();
+// Swagger only in Development
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
 
-// No HTTPS redirection in dev
-// app.UseHttpsRedirection();
+app.UseHttpsRedirection();
 
-// Static files with CORS header so React can fetch screenshots
+// IMPORTANT: CORS must be early in the pipeline
+app.UseCors(corsPolicyName);
+
+// Static files (screenshots) – also include CORS header
 app.UseStaticFiles(new StaticFileOptions
 {
     OnPrepareResponse = ctx =>
@@ -71,12 +77,6 @@ app.UseStaticFiles(new StaticFileOptions
     }
 });
 
-app.UseCors(corsPolicyName);
-
 app.UseAuthorization();
-
-app.UseStaticFiles();
-
 app.MapControllers();
-
 app.Run();

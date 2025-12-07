@@ -15,6 +15,7 @@ namespace Keepshot.Api.Controllers
         }
 
         [HttpPost("extract")]
+        [Consumes("multipart/form-data")]
         public async Task<IActionResult> Extract(
             [FromForm] IFormFile file,
             [FromForm] string time)
@@ -32,6 +33,8 @@ namespace Keepshot.Api.Controllers
 
         // 👇 NEW: multi-screenshot endpoint
         [HttpPost("extract-multiple")]
+        [Consumes("multipart/form-data")]
+
         public async Task<IActionResult> ExtractMultiple(
             [FromForm] IFormFile file,
             [FromForm] List<string> times)
