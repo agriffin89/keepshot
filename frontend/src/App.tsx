@@ -14,9 +14,15 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const downloadImage = (url: string, index?: number) => {
+  const downloadImage = async (url: string, index?: number) => {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error("Failed to download image: ${response.status}");
+    }
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.href = url;
+    link.href = objectUrl;
 
     const suffix = index !== undefined ? `_${index + 1}` : "";
     link.download = `keepshot${suffix}.jpg`;
@@ -24,6 +30,7 @@ function App() {
     document.body.appendChild(link);
     link.click();
     link.remove();
+    URL.revokeObjectURL(objectUrl);
   };
 
   const handleTimeChange = (index: number, value: string) => {
@@ -70,11 +77,14 @@ function App() {
       if (cleaned.length === 1) {
         // 🔹 Single timestamp → /api/video/extract
         const result = await extractScreenshot(file, cleaned[0]);
-        downloadImage(result.imageUrl);
+        await downloadImage(result.imageUrl);
       } else {
         // 🔹 Multiple timestamps → /api/video/extract-multiple
         const result = await extractScreenshots(file, cleaned);
-        result.imageUrls.forEach((url, idx) => downloadImage(url, idx));
+        // result.imageUrls.forEach((url, idx) => downloadImage(url, idx));
+        for (let i = 0; i < result.imageUrls.length; i++) {
+          await downloadImage(result.imageUrls[i], i);
+        }
       }
     } catch (err: unknown) {
       console.error(err);
