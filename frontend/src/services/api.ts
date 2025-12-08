@@ -7,8 +7,7 @@ export interface MultiExtractResponse {
 }
 
 const API_BASE_URL =
-  // "https://keepshot-api-adbufeg3hegng3h6.mexicocentral-01.azurewebsites.net";
-  "http://localhost:7190";
+  "https://keepshot-api-adbufeg3hegng3h6.mexicocentral-01.azurewebsites.net";
 
 // ---------- SINGLE screenshot (existing behavior) ----------
 export async function extractScreenshot(
