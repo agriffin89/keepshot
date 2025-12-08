@@ -24,6 +24,7 @@ backend/Keepshot/Keepshot.Api/wwwroot/screenshots/*
 # ==========================
 backend/Keepshot/Keepshot.Api/temp/*
 !backend/Keepshot/Keepshot.Api/temp/.gitkeep
+backend/Keepshot/Keepshot.Api/ffmpeg
 
 # ==========================
 # Frontend
