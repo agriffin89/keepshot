@@ -7,7 +7,7 @@ export interface MultiExtractResponse {
 }
 
 const API_BASE_URL =
-  import.meta.env.VITe_API_BASE_URL || "http://localhost:7190";
+  import.meta.env.VITE_API_BASE_URL ?? "http://localhost:7190";
 
 // ---------- SINGLE screenshot (existing behavior) ----------
 export async function extractScreenshot(
