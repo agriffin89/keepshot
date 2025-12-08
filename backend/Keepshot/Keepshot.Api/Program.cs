@@ -22,7 +22,8 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy(corsPolicyName, policy =>
         policy
-            .WithOrigins("http://localhost:5173")   // Vite dev
+            .WithOrigins("http://localhost:5173",
+            "https://purple-cliff-05f41db10.3.azurestaticapps.net")   // Vite dev
             .AllowAnyHeader()
             .AllowAnyMethod()
     );
