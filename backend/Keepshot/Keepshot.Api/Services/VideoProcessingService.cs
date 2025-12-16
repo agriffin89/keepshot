@@ -23,46 +23,45 @@ namespace Keepshot.Api.Services
             using (var stream = new FileStream(inputPath, FileMode.Create))
                 await file.CopyToAsync(stream);
 
-            // 2) Parse timestamp
-            var timestamp = ParseTimestamp(time);
-
-            // 3) Media duration & clamp
+            // 2) Read media info ONCE (duration + fps)
             var mediaInfo = await FFmpeg.GetMediaInfo(inputPath);
             var maxDuration = mediaInfo.Duration;
 
-            if (timestamp > maxDuration)
-            {
-                timestamp = maxDuration - TimeSpan.FromSeconds(1);
-                if (timestamp < TimeSpan.Zero)
-                    timestamp = TimeSpan.Zero;
-            }
+            var videoStream = mediaInfo.VideoStreams?.FirstOrDefault();
+            if (videoStream == null)
+                throw new InvalidOperationException("No video stream found in the uploaded file.");
 
-            // 4) Output screenshot path
+            var fps = GetSafeFps(videoStream);
+
+            // 3) Parse timestamp (supports frames)
+            var timestamp = ParseTimestamp(time, fps, maxDuration);
+
+            // 4) Clamp
+            timestamp = ClampToDuration(timestamp, maxDuration);
+
+            // 5) Output screenshot path
             var outputFileName = $"keepshot_{Guid.NewGuid():N}.jpg";
             var outputPath = Path.Combine(screenshotsFolder, outputFileName);
 
-            // 5) Snapshot
+            // 6) Snapshot
             var conversion = await FFmpeg.Conversions.FromSnippet
                 .Snapshot(inputPath, outputPath, timestamp);
 
             conversion.SetOverwriteOutput(true);
             await conversion.Start();
 
-            // 6) Cleanup temp video
+            // 7) Cleanup temp video
             try { File.Delete(inputPath); } catch { }
 
-            // 🔥 AUTO-CLEAN older files
+            // Auto-clean old files
             CleanOldFiles(tempFolder, TimeSpan.FromHours(1));
             CleanOldFiles(screenshotsFolder, TimeSpan.FromHours(1));
 
-            // 7) Build public URL
+            // 8) Build public URL
             var baseUrl = $"{request.Scheme}://{request.Host}";
             return $"{baseUrl}/screenshots/{outputFileName}";
         }
 
-        // ================================
-        // MULTI-SCREENSHOT VERSION
-        // ================================
         public async Task<List<string>> ExtractFramesAsync(
             IFormFile file,
             IEnumerable<string> times,
@@ -84,9 +83,15 @@ namespace Keepshot.Api.Services
             using (var stream = new FileStream(inputPath, FileMode.Create))
                 await file.CopyToAsync(stream);
 
-            // Get duration once
+            // Read media info once
             var mediaInfo = await FFmpeg.GetMediaInfo(inputPath);
             var maxDuration = mediaInfo.Duration;
+
+            var videoStream = mediaInfo.VideoStreams?.FirstOrDefault();
+            if (videoStream == null)
+                throw new InvalidOperationException("No video stream found in the uploaded file.");
+
+            var fps = GetSafeFps(videoStream);
 
             var resultUrls = new List<string>();
             var index = 0;
@@ -95,13 +100,8 @@ namespace Keepshot.Api.Services
             {
                 if (string.IsNullOrWhiteSpace(raw)) continue;
 
-                var timestamp = ParseTimestamp(raw);
-
-                if (timestamp > maxDuration)
-                {
-                    timestamp = maxDuration - TimeSpan.FromSeconds(1);
-                    if (timestamp < TimeSpan.Zero) timestamp = TimeSpan.Zero;
-                }
+                var timestamp = ParseTimestamp(raw, fps, maxDuration);
+                timestamp = ClampToDuration(timestamp, maxDuration);
 
                 var outputFileName = $"keepshot_{Guid.NewGuid():N}_{index}.jpg";
                 var outputPath = Path.Combine(screenshotsFolder, outputFileName);
@@ -118,7 +118,7 @@ namespace Keepshot.Api.Services
                 index++;
             }
 
-            // Delete temp video
+            // Cleanup temp video
             try { File.Delete(inputPath); } catch { }
 
             // Auto-clean old files
@@ -129,27 +129,131 @@ namespace Keepshot.Api.Services
         }
 
         // ================================
-        // Timestamp Parser
+        // Timestamp Parser (supports frames)
+        //
+        // Supports:
+        //  - "SS"
+        //  - "MM:SS"
+        //  - "HH:MM:SS"
+        //  - "MM:SS:FF"      (FF 0–120)
+        //  - "HH:MM:SS:FF"   (FF 0–120)
+        //
+        // Rule for 3 parts (A:B:C):
+        //  - if video < 1 hour => MM:SS:FF
+        //  - else              => HH:MM:SS
         // ================================
-        private static TimeSpan ParseTimestamp(string time)
+        private static TimeSpan ParseTimestamp(string input, double fps, TimeSpan videoDuration)
         {
-            var parts = time.Trim().Split(':');
+            if (string.IsNullOrWhiteSpace(input))
+                throw new ArgumentException("Time is required.");
+
+            var parts = input.Trim().Split(':', StringSplitOptions.RemoveEmptyEntries);
+
+            if (fps <= 0.1) fps = 30.0;
+
+            static int ParseInt(string s, string full)
+            {
+                if (!int.TryParse(s, out var v))
+                    throw new ArgumentException($"Invalid time format: {full}");
+                return v;
+            }
 
             if (parts.Length == 1)
-                return TimeSpan.FromSeconds(int.Parse(parts[0]));
+            {
+                // SS
+                var ss = ParseInt(parts[0], input);
+                return TimeSpan.FromSeconds(ss);
+            }
 
             if (parts.Length == 2)
-                return new TimeSpan(0, int.Parse(parts[0]), int.Parse(parts[1]));
+            {
+                // MM:SS
+                var mm = ParseInt(parts[0], input);
+                var ss = ParseInt(parts[1], input);
+                return new TimeSpan(0, mm, ss);
+            }
 
             if (parts.Length == 3)
-                return new TimeSpan(int.Parse(parts[0]), int.Parse(parts[1]), int.Parse(parts[2]));
+            {
+                // Ambiguous: HH:MM:SS vs MM:SS:FF
+                // Use duration rule:
+                // - short videos => MM:SS:FF
+                // - long videos  => HH:MM:SS
+                var a = ParseInt(parts[0], input);
+                var b = ParseInt(parts[1], input);
+                var c = ParseInt(parts[2], input);
 
-            throw new ArgumentException($"Invalid time format: {time}");
+                if (videoDuration < TimeSpan.FromHours(1))
+                {
+                    // MM:SS:FF
+                    var mm = a;
+                    var ss = b;
+                    var ff = c;
+
+                    ValidateFrames(ff);
+
+                    var baseTime = new TimeSpan(0, mm, ss);
+                    return baseTime + TimeSpan.FromSeconds(ff / fps);
+                }
+                else
+                {
+                    // HH:MM:SS
+                    var hh = a;
+                    var mm = b;
+                    var ss = c;
+                    return new TimeSpan(hh, mm, ss);
+                }
+            }
+
+            if (parts.Length == 4)
+            {
+                // HH:MM:SS:FF
+                var hh = ParseInt(parts[0], input);
+                var mm = ParseInt(parts[1], input);
+                var ss = ParseInt(parts[2], input);
+                var ff = ParseInt(parts[3], input);
+
+                ValidateFrames(ff);
+
+                var baseTime = new TimeSpan(hh, mm, ss);
+                return baseTime + TimeSpan.FromSeconds(ff / fps);
+            }
+
+            throw new ArgumentException($"Invalid time format: {input}");
         }
 
-        // ================================
-        // AUTO CLEAN OLD FILES (1 hour)
-        // ================================
+        private static void ValidateFrames(int ff)
+        {
+            if (ff < 0 || ff > 120)
+                throw new ArgumentException("Frames (FF) must be between 0 and 120.");
+        }
+
+        private static TimeSpan ClampToDuration(TimeSpan timestamp, TimeSpan maxDuration)
+        {
+            if (timestamp <= maxDuration) return timestamp;
+
+            var safe = maxDuration - TimeSpan.FromSeconds(1);
+            if (safe < TimeSpan.Zero) safe = TimeSpan.Zero;
+            return safe;
+        }
+
+        private static double GetSafeFps(IVideoStream videoStream)
+        {
+            double fps = 30.0;
+
+            try
+            {
+                var candidate = videoStream.Framerate;
+                if (candidate > 0.1) fps = candidate;
+            }
+            catch
+            {
+                // keep fallback
+            }
+
+            return fps;
+        }
+
         private static void CleanOldFiles(string folder, TimeSpan maxAge)
         {
             if (!Directory.Exists(folder))

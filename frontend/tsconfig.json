@@ -1,6 +1,6 @@
 {
   "compilerOptions": {
-    "types": ["jest"],
+    "types": ["jest", "@testing-library/jest-dom"],
     "esModuleInterop": true,
     "jsx": "react-jsx",
     "lib": ["ES2017", "DOM", "DOM.Iterable"]

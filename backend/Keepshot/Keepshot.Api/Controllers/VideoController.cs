@@ -34,20 +34,17 @@ namespace Keepshot.Api.Controllers
             }
             catch (Exception ex)
             {
-                // 👇 This will go to Azure Log Stream (Application logs)
                 Console.WriteLine("ERROR in /api/video/extract:");
                 Console.WriteLine(ex.ToString());
-
                 return StatusCode(500, new { error = ex.Message });
             }
         }
 
-        // NEW: multi-screenshot endpoint
         [HttpPost("extract-multiple")]
         [Consumes("multipart/form-data")]
         public async Task<IActionResult> ExtractMultiple(
             [FromForm] IFormFile file,
-            [FromForm] List<string> times)
+            [FromForm(Name = "times")] List<string> times)
         {
             try
             {
@@ -68,7 +65,6 @@ namespace Keepshot.Api.Controllers
             {
                 Console.WriteLine("ERROR in /api/video/extract-multiple:");
                 Console.WriteLine(ex.ToString());
-
                 return StatusCode(500, new { error = ex.Message });
             }
         }

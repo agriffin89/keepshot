@@ -36,8 +36,8 @@ describe("Keepshot App workflow", () => {
       selector: "input[type='file']",
     });
     fireEvent.change(input, { target: { files: [file] } });
-    const timeInput = screen.getByPlaceholderText("mm:ss");
-    fireEvent.change(timeInput, { target: { value: "01:23" } });
+    const timeInput = screen.getByPlaceholderText("HH:MM:SS:FF");
+    fireEvent.change(timeInput, { target: { value: "00:00:01:00" } });
     fireEvent.click(screen.getByText(/download/i));
     await waitFor(() => {
       expect(screen.getByText(/api error/i)).toBeInTheDocument();

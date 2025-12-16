@@ -1,11 +1,27 @@
 .time-input {
-  width: 90px;
-  padding: 8px 10px;
+  width: 160px; /* fits HH:MM:SS:FF */
+  max-width: 100%;
+  padding: 8px 12px;
   border-radius: 10px;
   border: 1px solid var(--border-soft);
   text-align: center;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 500;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.06em;
   background: #f9fbff;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* Better focus feedback */
+.time-input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+}
+
+/* Placeholder styling */
+.time-input::placeholder {
+  letter-spacing: 0.02em;
+  font-size: 13px;
+  color: #9aa4b2;
 }
